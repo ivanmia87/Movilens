@@ -1,0 +1,252 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+---
+title: "Report MovieLens project"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+knitr::opts_chunk$set(echo = TRUE)
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                 col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+
+set.seed(1, sample.kind="Rounding")
+# if using R 3.5 or earlier, use `set.seed(1)` instead
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+
+validation <- temp %>% 
+     semi_join(edx, by = "movieId") %>%
+     semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+validation_New <- validation  
+validation <- validation %>% select(-rating)
+
+
+```
+
+##Introduction 
+
+In this project we use dataset Movielens included in the dslabs package.
+The Movilens is composed from users (userId) that give a  rating between 0 and 5 (rating) in a specific date and time (timestamp) for the movies (movieId) that have a title and a genres associated.
+Our goal is using the inputs in one subset to predict movie ratings in the validation set that will compared with RMSE.
+
+## Data exploration
+
+The first step, is to see the structur of our data (training dataset)
+
+
+```{r edx1}
+head(edx)
+```
+
+the data set edx, is composed by 6 six variable, of two type:
+1) Quantitave variable:userId (number identify the user), movieId (number identify the movie), timestamp (number that iden identify date and time), rating (valutation of ranting movies - that is a discete variable, that hava a value from 0.5 to 5)
+2) Qualitative variable: title (name movie title - not unique), genres (type genres associated with the movie).
+
+```{r edx2}
+str(edx)
+```
+
+this is summaries of every variable
+
+```{r edx3}
+summary(edx)
+```
+
+
+## Count votes of genre
+
+We see the top ten genres that have more review
+
+```{r pressure, echo=FALSE}
+top_10_genre<- edx%>%
+  group_by(genres) %>%
+  summarize(count = n()) %>%
+  arrange(desc(count))  %>% top_n(10)  
+
+top_10_genre
+
+```
+
+
+
+## Count vote for user
+
+This is a histogram that rapresent the number votes give for every user.
+
+```{r pressure2, echo=FALSE}
+edx %>% count(userId) %>% 
+  ggplot(aes(n)) + 
+  geom_histogram(bins = 40, color = "red",fill="black")+
+labs(title="Count vote for user")
+```
+
+
+## Top 10 movies with most vote
+Here we have the list of top ten movie with more movie review
+ 
+```{r pressure3, echo=FALSE}
+top_10_film<- edx %>% group_by(title) %>% summarize(count=n()) %>% arrange(desc(count)) %>% top_n(10)  
+top_10_film
+```
+
+
+## Model prediction
+We applicate different model to predict the rating movies and we select one that have more lower RMSE (Residual Mean Standard Error)
+
+- In a first model we use the mean of rating for predict the rating of movies
+This model find the mean of training set of reating movies
+
+```{r edx4}
+mu_edx <- mean(edx$rating)  
+mu_edx
+```
+
+
+and the quality of model is:
+
+```{r edx5}
+basic_rmse <- RMSE(validation_New$rating,mu_edx)
+basic_rmse
+```
+
+
+
+- In a second model we applicate the penalty of the movie effect
+
+```{r edx6}
+moviePenalty <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_movie = mean(rating - mu_edx))
+
+moviePenalty
+```
+
+and we have the quality of predict model is
+
+```{r edx7}
+predict_ratings_movie<- validation %>% 
+  left_join(moviePenalty, by='movieId') %>%
+  mutate(pred = mu_edx + b_movie) 
+modelMovies_rmse <- RMSE(validation_New$rating,predict_ratings_movie$pred)
+modelMovies_rmse
+```
+
+
+``````{r moviePenalaty, echo=FALSE}
+
+moviePenalty %>% qplot(b_movie, geom ="histogram", bins = 40, data = ., color = "black", main = "Penalty Movie")
+moviePenalty
+```
+
+
+- In the third model, for predict tha rating we use the penalty of movie effect (the previous model) and the penalty of users effect 
+
+Before we calculate the penalty of users
+```{r PenaltyUser}
+penaltyUser <- edx %>% 
+  left_join(moviePenalty, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_user = mean(rating - mu_edx - b_movie))
+
+penaltyUser
+```
+
+
+
+and now we can calculate the RMSE of this model, that is
+
+```{r edx9}
+
+
+predicted_ratings_user <- validation %>% 
+  left_join(moviePenalty, by='movieId') %>%
+  left_join(penaltyUser, by='userId') %>%
+  mutate(pred = mu_edx + b_movie + b_user) 
+# test rmse results 
+model_MoviesUsers_rmse <- RMSE(validation_New$rating,predicted_ratings_user$pred)
+model_MoviesUsers_rmse
+```
+
+- The fourth model, we consider users,movies,years, genres and than applicate the regularization 
+```{r pressure4, echo=FALSE}
+lambdas <- seq(0, 20, 0.25)
+
+rmses <- sapply(lambdas, function(l){
+  
+  mu_edx <- mean(edx$rating)
+  
+  b_movie <- edx %>% 
+    group_by(movieId) %>%
+    summarize(b_movie = sum(rating - mu_edx)/(n()+l))
+  
+  b_user <- edx %>% 
+    left_join(b_movie, by="movieId") %>%
+    group_by(userId) %>%
+    summarize(b_user = sum(rating - b_movie - mu_edx)/(n()+l))
+  
+  predicted_ratings_b_movie_user <- 
+    validation %>% 
+    left_join(b_movie, by = "movieId") %>%
+    left_join(b_user, by = "userId") %>%
+    mutate(pred = mu_edx + b_movie + b_user) %>%
+    .$pred
+  
+  return(RMSE(validation_New$rating,predicted_ratings_b_movie_user)) 
+})
+
+qplot(lambdas, rmses)  
+
+
+lambda <- lambdas[which.min((rmses))]
+lambda
+
+```
+
+the RMSE in this model is:
+
+```{r edx10}
+min(rmses)
+```
+
+## Results
+We see the best model to predict the rating movies is the fourth model where we applicate the regularization
