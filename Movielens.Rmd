@@ -139,6 +139,9 @@ This model find the mean of training set of reating movies
 ```{r edx4}
 mu_edx <- mean(edx$rating)  
 mu_edx
+
+rmse_results <- data_frame(method = "Only Mean", RMSE = mu_edx)
+
 ```
 
 
@@ -159,6 +162,7 @@ moviePenalty <- edx %>%
   summarize(b_movie = mean(rating - mu_edx))
 
 moviePenalty
+
 ```
 
 and we have the quality of predict model is
@@ -168,6 +172,8 @@ predict_ratings_movie<- validation %>%
   left_join(moviePenalty, by='movieId') %>%
   mutate(pred = mu_edx + b_movie) 
 modelMovies_rmse <- RMSE(validation_New$rating,predict_ratings_movie$pred)
+rmse_results <- bind_rows(rmse_results, data_frame(method="Movie Effect Model", RMSE = modelMovies_rmse ))
+
 modelMovies_rmse
 ```
 
@@ -189,6 +195,9 @@ penaltyUser <- edx %>%
   summarize(b_user = mean(rating - mu_edx - b_movie))
 
 penaltyUser
+
+
+
 ```
 
 
@@ -204,6 +213,7 @@ predicted_ratings_user <- validation %>%
   mutate(pred = mu_edx + b_movie + b_user) 
 # test rmse results 
 model_MoviesUsers_rmse <- RMSE(validation_New$rating,predicted_ratings_user$pred)
+rmse_results <- bind_rows(rmse_results,data_frame(method="Movie and User Effect Model", RMSE = model_MoviesUsers_rmse ))
 model_MoviesUsers_rmse
 ```
 
@@ -244,9 +254,25 @@ lambda
 
 the RMSE in this model is:
 
-```{r edx10}
+```{r edx11}
 min(rmses)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Regularized Movie and User Effect Model",RMSE = min(rmses) ))
+
+
 ```
 
-## Results
+
+##Results
+
+We see the results with different model applicate and relative RMSE
+```{r edx12}
+rmse_results %>% knitr::kable()
+
+```
+
+
+
+## Conclusion
 We see the best model to predict the rating movies is the fourth model where we applicate the regularization
